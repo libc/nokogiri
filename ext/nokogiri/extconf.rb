@@ -81,6 +81,19 @@ def do_clean
   exit! 0
 end
 
+def add_cflags(flags)
+  print "checking if the C compiler accepts #{flags}... "
+  with_cflags("#{$CFLAGS} #{flags}") do
+    if try_compile("int main() {return 0;}")
+      puts 'yes'
+      true
+    else
+      puts 'no'
+      false
+    end
+  end
+end
+
 def preserving_globals
   values = [
     $arg_config,
@@ -113,7 +126,11 @@ def each_iconv_idir
   %w[iconv opt].each { |config|
     idir = preserving_globals {
       dir_config(config)
-    }.first and yield idir
+    }.first or next
+
+    idir.split(File::PATH_SEPARATOR).each { |dir|
+      yield dir
+    }
   }
 
   # Try the system default
@@ -302,8 +319,10 @@ if defined?(RUBY_ENGINE) && RUBY_ENGINE == 'macruby'
   $LIBRUBYARG_STATIC.gsub!(/-static/, '')
 end
 
-$CFLAGS << " #{ENV["CFLAGS"]}"
 $LIBS << " #{ENV["LIBS"]}"
+
+# Read CFLAGS from ENV and make sure compiling works.
+add_cflags(ENV["CFLAGS"])
 
 case RbConfig::CONFIG['target_os']
 when 'mingw32', /mswin/
@@ -312,8 +331,8 @@ when 'mingw32', /mswin/
 when /solaris/
   $CFLAGS << " -DUSE_INCLUDED_VASPRINTF"
 when /darwin/
-  # TODO: maybe make it stricter to only work on stock ruby? How to tell?
-  $CFLAGS << " -Wno-error=unused-command-line-argument-hard-error-in-future"
+  # Let Apple LLVM/clang 5.1 ignore unknown compiler flags
+  add_cflags("-Wno-error=unused-command-line-argument-hard-error-in-future")
 else
   $CFLAGS << " -g -DXP_UNIX"
 end
